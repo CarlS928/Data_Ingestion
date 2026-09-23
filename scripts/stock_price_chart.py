@@ -5,13 +5,16 @@ Downloads one year (ending today) of daily closing prices for JPM, MSFT, MS, HOG
 from Yahoo Finance and writes a standalone, interactive HTML dashboard with a
 dropdown to choose which stock is displayed, headline stats, range buttons,
 a data-table view and a fire-breathing dragon whose flame becomes the price line.
+Also writes a long-format CSV of all five stocks' data, linked from the page.
 
 Run with:
     python scripts/stock_price_chart.py
 Output:
     outputs/stock_price_chart.html   (loads Plotly from a CDN, so it needs internet to display)
+    outputs/stock_price_data.csv     (Date, Ticker, Company, Close — every ticker, one file)
 """
 
+import csv
 import json
 from datetime import date, timedelta
 from pathlib import Path
@@ -28,6 +31,8 @@ TICKERS = {
     "SAN": "Banco Santander, S.A. (Santander)",
 }
 OUTPUT_PATH = Path(__file__).resolve().parent.parent / "outputs" / "stock_price_chart.html"
+CSV_PATH = Path(__file__).resolve().parent.parent / "outputs" / "stock_price_data.csv"
+CSV_FILENAME = CSV_PATH.name  # linked from the HTML page, which lives in the same outputs/ folder
 
 DRAGON_SVG = """
 <svg class="dragon" viewBox="0 0 320 460" xmlns="http://www.w3.org/2000/svg" aria-label="A fire-breathing dragon" role="img">
@@ -145,6 +150,9 @@ TEMPLATE = """<!DOCTYPE html>
            box-shadow: 0 0 0 0 transparent, 0 0 22px -6px var(--accent); transition: box-shadow .2s, border-color .4s; }
   select:hover, select:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent), 0 0 26px -4px var(--accent); }
   select option { background: var(--surface); color: var(--text-primary); }
+  .csv-link { color: var(--text-secondary); font-size: 13px; font-weight: 600; text-decoration: none; border: 1px solid var(--line);
+              border-radius: 999px; padding: 8px 14px; transition: all .15s; }
+  .csv-link:hover { color: var(--text-primary); border-color: var(--accent); box-shadow: 0 0 14px -4px var(--accent); }
 
   main { min-width: 0; }
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
@@ -202,6 +210,7 @@ TEMPLATE = """<!DOCTYPE html>
       <p class="sub">Daily closing prices &middot; __START__ to __END__ &middot; source: Yahoo Finance</p>
     </div>
     <div class="picker">
+      <a class="csv-link" href="__CSV_FILENAME__" download>&#8681; Download CSV</a>
       <label for="ticker">Choose stock</label>
       <div class="select-wrap"><select id="ticker">__OPTIONS__</select></div>
     </div>
@@ -356,6 +365,23 @@ def fetch_closing_prices(tickers, start, end):
     return data["Close"]
 
 
+def write_csv(closes, path):
+    """Write one long-format CSV (Date, Ticker, Company, Close) covering every ticker."""
+    rows = []
+    for ticker, name in TICKERS.items():
+        series = closes[ticker].dropna()
+        for dt, close in series.items():
+            rows.append((dt, ticker, name, round(float(close), 2)))
+    rows.sort(key=lambda r: (r[0], r[1]))
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Date", "Ticker", "Company", "Close"])
+        for dt, ticker, name, close in rows:
+            writer.writerow([dt.strftime("%Y-%m-%d"), ticker, name, close])
+
+
 def build_html(closes, start, end):
     payload = {}
     for ticker, name in TICKERS.items():
@@ -372,6 +398,7 @@ def build_html(closes, start, end):
         .replace("__DRAGON__", DRAGON_SVG)
         .replace("__START__", start.strftime("%b %d, %Y"))
         .replace("__END__", end.strftime("%b %d, %Y"))
+        .replace("__CSV_FILENAME__", CSV_FILENAME)
     )
 
 
@@ -385,6 +412,9 @@ def main():
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(build_html(closes, start, end), encoding="utf-8")
     print(f"Chart saved to {OUTPUT_PATH}")
+
+    write_csv(closes, CSV_PATH)
+    print(f"CSV saved to {CSV_PATH}")
 
 
 if __name__ == "__main__":

@@ -26,3 +26,11 @@ tqdm
 
 # Market data
 yfinance
+
+# SEC EDGAR filings
+requests
+lxml
+beautifulsoup4
+
+# Audio transcription
+faster-whisper
